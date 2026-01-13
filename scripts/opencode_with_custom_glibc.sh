@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Define cleanup function
+cleanup_terminal() {
+    # Reset terminal to original state, enable mouse event tracking
+    echo -e '\033[?1000h\033[?1002h\033[?1003h' 2>/dev/null || true
+    echo "Terminal reset to original state"
+}
+
+# Set trap to ensure cleanup is performed when script exits
+trap cleanup_terminal EXIT INT TERM
+
+# Reset terminal state, disable mouse tracking
+echo -e '\033[?1000l\033[?1002l\033[?1003l\033[?1005l\033[?1006l' 2>/dev/null || true
+
+# Create a temporary directory to store the modified opencode
+TEMP_DIR=$(mktemp -d)
+OPENCODE_PATH="/home/taoyida/.opencode/bin/opencode"
+MODIFIED_OPENCODE="$TEMP_DIR/opencode_modified"
+
+# Activate torch113pip environment to ensure access to patchelf
+source /home/taoyida/miniconda3/etc/profile.d/conda.sh
+conda activate torch113pip
+
+echo "Starting opencode with custom glibc 2.28 (ultimate solution)..."
+
+# Copy opencode to temporary location
+cp "$OPENCODE_PATH" "$MODIFIED_OPENCODE"
+
+# Use patchelf to modify the interpreter to our custom glibc
+patchelf --set-interpreter "/home/taoyida/opt/glibc-2.28/lib/ld-linux-x86-64.so.2" "$MODIFIED_OPENCODE"
+
+# Save original environment variables
+ORIGINAL_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+ORIGINAL_LANG="$LANG"
+ORIGINAL_LOCPATH="$LOCPATH"
+ORIGINAL_TERM="$TERM"
+ORIGINAL_TERMCAP="$TERMCAP"
+
+# Set LD_LIBRARY_PATH to ensure using correct libraries
+export LD_LIBRARY_PATH="/home/taoyida/opt/glibc-2.28/lib:/home/taoyida/opt/gcc-9.5.0/lib64:$LD_LIBRARY_PATH"
+
+# Check and set appropriate locale to avoid encoding issues
+if locale -a | grep -i utf-8 >/dev/null 2>&1; then
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+else
+    export LANG=C
+    export LC_ALL=C
+fi
+
+# Set terminal type to one that doesn't support mouse events
+export TERM=dumb
+
+# If the system has localized gconv modules, specify LOCPATH as well
+if [ -d "/home/taoyida/opt/glibc-2.28/lib/locale" ]; then
+    export LOCPATH="/home/taoyida/opt/glibc-2.28/lib/locale"
+fi
+
+# Run the modified opencode and capture exit code
+"$MODIFIED_OPENCODE" "$@"
+
+# Save return code
+RETURN_CODE=$?
+
+# Restore original environment variables
+export LD_LIBRARY_PATH="$ORIGINAL_LD_LIBRARY_PATH"
+export LANG="$ORIGINAL_LANG"
+export LOCPATH="$ORIGINAL_LOCPATH"
+if [ -n "$ORIGINAL_LOCPATH" ]; then
+    export LOCPATH="$ORIGINAL_LOCPATH"
+else
+    unset LOCPATH
+fi
+export TERM="$ORIGINAL_TERM"
+
+# Clean up temporary files, but not in current process, using subshell instead
+( sleep 0.2; rm -rf "$TEMP_DIR" ) &
+
+echo "opencode has exited, environment variables restored"
+# Note: Terminal cleanup will be automatically executed when trap catches EXIT signal
+exit $RETURN_CODE
