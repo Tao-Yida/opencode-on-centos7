@@ -40,14 +40,10 @@ ORIGINAL_TERMCAP="$TERMCAP"
 # Set LD_LIBRARY_PATH to ensure using correct libraries
 export LD_LIBRARY_PATH="/home/taoyida/opt/glibc-2.28/lib:/home/taoyida/opt/gcc-9.5.0/lib64:$LD_LIBRARY_PATH"
 
-# Check and set appropriate locale to avoid encoding issues
-if locale -a | grep -i utf-8 >/dev/null 2>&1; then
-    export LANG=en_US.UTF-8
-    export LC_ALL=en_US.UTF-8
-else
-    export LANG=C
-    export LC_ALL=C
-fi
+# Set safe locale to avoid encoding issues
+# Directly set widely supported locale to avoid running locale command in custom glibc environment
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
 
 # Set terminal type to one that doesn't support mouse events
 export TERM=dumb

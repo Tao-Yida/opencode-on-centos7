@@ -32,6 +32,8 @@ The default glibc version on CentOS 7 systems is 2.17, while modern applications
 
 2. **Usage Risk Warning**: Since this project is developed using vibe coding approach, there may be potential errors and unstable factors. There are certain risks when using it. Please evaluate thoroughly before use and operate cautiously.
 
+3. **Script Location**: The main script `opencode_with_custom_glibc.sh` is located in the root directory of the project for direct usage. While the project repository contains a `scripts` subdirectory, the operational script is placed in the root directory to avoid confusion. When using this project, please ensure you are using the script from the root directory.
+
 ## Prerequisites
 
 ### Checking Operating System Version
@@ -71,8 +73,12 @@ hostnamectl
 
 - CentOS 7 system
 - Sufficient disk space in the user home directory (at least 5GB recommended)
-- Basic development tools installed (if not installed, requires root privileges to execute `yum groupinstall "Development Tools"`)
+- Basic compilation tools (gcc, make) - usually pre-installed on CentOS 7 systems. If not available, you can:
+  - Use Conda to install: `conda install -c conda-forge gcc_linux-64 make`
+  - Or contact the system administrator to install basic development tools
 - Network connection (for downloading source code)
+
+**Important**: This guide can be completed entirely without root privileges. All software is installed in user directories.
 
 ## Quick Reference
 
@@ -82,7 +88,7 @@ hostnamectl
 - Make 4.2 Installation Path: `$HOME/opt/make-4.2`
 - glibc 2.28 Installation Path: `$HOME/opt/glibc-2.28`
 - OpenCode Binary Path: `$HOME/.opencode/bin/opencode`
-- OpenCode Startup Script: `$HOME/scripts/opencode_with_custom_glibc.sh`
+- OpenCode Startup Script: `$HOME/opencode_with_custom_glibc.sh`
 
 ### Key Environment Variables
 
@@ -115,17 +121,29 @@ opencode --version
 
 ### 1.0 Install Compilation Dependencies (Important)
 
-Before compiling GCC, ensure that the system has installed the necessary development tools and libraries:
+**Important Note**: This guide can be completed entirely without root privileges. For GCC compilation dependencies (gmp, mpfr, libmpc), we recommend using Conda.
+
+**Recommended Method: Use Conda to Install Dependencies**
+
+If you have Conda installed, you can use it to install these dependencies:
 
 ```bash
-# If development tools group is not yet installed (requires root privileges)
-sudo yum groupinstall "Development Tools"
+# Activate conda environment (if you have one)
+conda activate your_env_name  # or create new: conda create -n gcc-build
 
-# Install dependencies required for GCC compilation
-sudo yum install gmp-devel mpfr-devel libmpc-devel zlib-devel
+# Install GCC compilation dependencies
+conda install -c conda-forge gmp mpfr libmpc zlib
 ```
 
-**Note**: If sudo is unavailable, you can try to compile these dependency libraries from source, but the process will be more complex.
+Then configure environment variables so GCC compilation can find these libraries:
+
+```bash
+export CPPFLAGS="-I$CONDA_PREFIX/include $CPPFLAGS"
+export LDFLAGS="-L$CONDA_PREFIX/lib $LDFLAGS"
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+```
+
+
 
 ### 1.1 Download GCC Source Code
 
@@ -140,13 +158,11 @@ tar -xf gcc-9.5.0.tar.xz
 cd gcc-9.5.0
 ```
 
-### 1.2 Download Dependency Libraries
+### 1.2 Prepare GCC Compilation Environment
 
-GCC needs to download some dependency libraries:
+If you installed dependency libraries using Conda (recommended method), ensure that environment variables are correctly set (see Step 1.0).
 
-```bash
-./contrib/download_prerequisites
-```
+**Note**: If you used other methods (GCC's built-in download script or compiled from source), GCC's configure script will automatically detect and use these dependency libraries.
 
 ### 1.3 Configure and Compile GCC
 
@@ -432,7 +448,7 @@ patchelf --version
 
 ### 5.2 Create OpenCode Startup Script
 
-Create script `~/scripts/opencode_with_custom_glibc.sh`:
+Create script `~/opencode_with_custom_glibc.sh`:
 
 ```bash
 #!/bin/bash
@@ -556,7 +572,7 @@ Add to `~/.bashrc` or `~/.zshrc`:
 ```bash
 # opencode command alias, using custom glibc 2.28
 opencode() {
-    $HOME/scripts/opencode_with_custom_glibc.sh "$@"
+    $HOME/opencode_with_custom_glibc.sh "$@"
 }
 
 # Ensure opencode is in PATH
@@ -653,10 +669,19 @@ When segmentation faults occur, it's usually because of library version incompat
 **Common errors and solutions**:
 
 1. **Missing dependency library errors**
+   
+   If you encounter errors about missing gmp, mpfr, libmpc, or other dependency libraries, we recommend using Conda:
+   
    ```bash
-   # Install all required dependencies
-   sudo yum install gmp-devel mpfr-devel libmpc-devel zlib-devel
+   conda install -c conda-forge gmp mpfr libmpc zlib
+   export CPPFLAGS="-I$CONDA_PREFIX/include $CPPFLAGS"
+   export LDFLAGS="-L$CONDA_PREFIX/lib $LDFLAGS"
+   export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
    ```
+   
+   Other optional methods:
+   - Use GCC's built-in `./contrib/download_prerequisites` script
+   - Compile dependency libraries from source (refer to Step 1.0 for details)
 
 2. **Insufficient disk space**
    - Check disk space: `df -h ~`
