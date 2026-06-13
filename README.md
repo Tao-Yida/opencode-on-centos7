@@ -10,6 +10,8 @@
 
 > 🎉 **Pull Requests are WELCOME!** This project consolidates scripts and tutorials for running modern AI coding agents on old Linux systems (CentOS 7, RHEL 7, etc.) where the default glibc is too old (2.17) to run agents compiled against glibc 2.28+. If you have a new agent method, **send a PR!** See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+> 💡 **For OpenCode-only users**: [@pedropombeiro/opencode-legacy-glibc](https://github.com/pedropombeiro/opencode-legacy-glibc) provides a **simpler, no-compilation-needed** approach specifically for OpenCode. It's a different solution by another developer — if you only need OpenCode and want to avoid compiling glibc, check that repo first. This repository's approach is more general (supports multiple agents) but requires more setup.
+
 ---
 
 ## Table of Contents
@@ -50,7 +52,9 @@ The default glibc version on CentOS 7 systems is **2.17**, while modern AI codin
 
 This project compiles a **user-local glibc 2.28** (plus GCC 9.5.0 and Make 4.2) and provides startup scripts for each coding agent — all without root privileges.
 
-Originally focused on [OpenCode](https://github.com/pedropombeiro/opencode-legacy-glibc), this repo now serves as a **universal compatibility layer** for any coding agent targeting modern glibc.
+This repository was originally created for OpenCode on CentOS 7, and has since expanded to support multiple coding agents (Cursor CLI, Kimi Code, etc.) with the same underlying glibc 2.28 approach.
+
+> **Note about [opencode-legacy-glibc](https://github.com/pedropombeiro/opencode-legacy-glibc)**: That repository by [@pedropombeiro](https://github.com/pedropombeiro) provides a separate, simpler approach specifically for OpenCode — using Docker to build a compatible version without compiling glibc. If you only need OpenCode and want to avoid the compilation steps, we recommend checking that project first. This repository takes a more general approach (compile glibc once, support multiple agents) at the cost of more initial setup.
 
 ---
 
@@ -270,6 +274,8 @@ $HOME/opt/glibc-2.28/lib/ld-linux-x86-64.so.2 \
 [OpenCode](https://opencode.ai) is an open-source AI coding assistant. OpenCode is a compiled binary requiring glibc 2.28+.
 
 **Method**: `patchelf` — modifies the binary's interpreter to use custom glibc.
+
+> 💡 **Simpler alternative**: If you only need OpenCode and prefer to avoid compiling glibc, check out [@pedropombeiro/opencode-legacy-glibc](https://github.com/pedropombeiro/opencode-legacy-glibc). It uses Docker to build a legacy-glibc-compatible OpenCode binary — less setup, but OpenCode-only. This repo's approach supports more agents at the cost of more initial setup.
 
 ### Install OpenCode
 
@@ -513,7 +519,7 @@ This project started as a single-agent solution for OpenCode and has grown into 
 - Open an Issue if you have problems or suggestions.
 
 **Related Projects:**
-- [opencode-legacy-glibc](https://github.com/pedropombeiro/opencode-legacy-glibc) — Simpler method for OpenCode-only users (no glibc upgrade needed)
+- [opencode-legacy-glibc](https://github.com/pedropombeiro/opencode-legacy-glibc) (by @pedropombeiro) — Simpler, OpenCode-only solution using Docker-built binaries (no glibc compilation needed)
 - [cursorcli-glibc-shim](https://github.com/Tao-Yida/cursorcli-glibc-shim) — Original Cursor CLI glibc shim (now merged into this repo)
 
 ---
