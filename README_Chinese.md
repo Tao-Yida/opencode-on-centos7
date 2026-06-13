@@ -451,11 +451,14 @@ kimi() {
 
 ### 鼠标事件编码
 
-所有运行过 OpenCode 的终端在运行后可能会持续生成鼠标行为编码（如 `[[<35;23;26M`）。关闭终端标签页即可解决。执行 `reset` 命令可能会有所帮助。
+- **问题描述**：所有运行过 opencode 命令的终端在运行后可能会持续生成鼠标行为的编码（如 `[[<35;23;26M` 等），这是由于 opencode 启用了终端的鼠标事件追踪功能。
+- **解决方案**：暂时没有直接的解决方案，但可以通过关闭当前终端窗口或标签页来解决此问题。此问题不影响 opencode 的正常使用。
+- **临时缓解**：在终端中执行 `reset` 命令可能会有所帮助，但不保证完全解决。
+- **预防措施**：如果此问题影响您的工作流程，建议为 opencode 使用专用的终端窗口。
 
 ### `libgcc_s.so.1` 依赖
 
-当使用自定义 glibc 2.28 时，`libpthread` 需要 `libgcc_s.so.1` 来支持 `pthread_cancel` 功能。启动脚本通过将 `$HOME/opt/gcc-9.5.0/lib64` 添加到 `LD_LIBRARY_PATH` 来处��此问题。
+当使用自定义 glibc 2.28 时，`libpthread` 需要 `libgcc_s.so.1` 来支持 `pthread_cancel` 功能。启动脚本通过将 `$HOME/opt/gcc-9.5.0/lib64` 添加到 `LD_LIBRARY_PATH` 来处理此问题。
 
 **未配置时的错误信息：**
 ```
@@ -463,13 +466,26 @@ libgcc_s.so.1 must be installed for pthread_cancel to work
 Aborted (core dumped)
 ```
 
+**验证方法：**
+```bash
+ls -la ~/opt/gcc-9.5.0/lib64/libgcc_s.so.1
+```
+
 ### Bash 子进程崩溃（已解决）
 
-之前，由于设置了包含自定义 glibc 2.28 的 `LD_LIBRARY_PATH`，OpenCode 的子进程（bash、ls 等）会出现段错误，但系统二进制文件是用 glibc 2.17 编译的。
-
-**根本原因**：子进程继承的 `LD_LIBRARY_PATH` 强制它们使用不兼容的 glibc。
-
-**修复**：脚本现在**不**将自定义 glibc 加入 `LD_LIBRARY_PATH`。自定义链接器通过 `patchelf` 或直接调用方式使用。只将 GCC 库路径加入 `LD_LIBRARY_PATH`。
+- **问题描述**：之前，使用自定义 glibc 2.28 运行 OpenCode 时存在严重的环境隔离问题。OpenCode 能够写入文件，但无法读取文件或执行命令。基础命令如 `ls`、`pwd`、`whoami` 等返回空结果或不返回任何输出，或导致段错误。
+- **根本原因**：问题是由于设置了包含自定义 glibc 2.28 库的 `LD_LIBRARY_PATH` 环境变量。这个环境变量会被 opencode 的子进程（如 bash）继承。但是，系统的 bash 是用系统 glibc 2.17 编译的，尝试使用自定义 glibc 2.28 库会导致 bash 崩溃（段错误）。
+- **解决方案**：
+  1. **所有启动脚本中**：不设置 `LD_LIBRARY_PATH` 指向自定义 glibc。由于 Agent 使用 patchelf 修改的解释器或 `ld-linux --library-path`，它们会自动找到正确的库。
+  2. **在 `~/.bashrc` 中**：添加对 `CURSOR_AGENT` 环境变量的检查，当它被设置时清除 `LD_LIBRARY_PATH`。这确保 bash 子进程使用系统默认的 glibc。
+  3. **终端类型**：使用 `TERM=xterm-256color` 而不是 `TERM=dumb`，以确保命令输出正常工作。
+- **状态**：**已解决** - 问题已修复。所有 Agent 现在可以正常读取文件和执行命令。
+- **调试方法**：如果遇到类似问题（命令无输出或段错误）：
+  1. 检查 `LD_LIBRARY_PATH` 是否包含自定义 glibc 路径：`echo $LD_LIBRARY_PATH`
+  2. 测试 bash 使用自定义 glibc：`LD_LIBRARY_PATH="/path/to/custom/glibc/lib:$LD_LIBRARY_PATH" bash -c 'echo test'` — 这应该会崩溃
+  3. 验证修复：确保启动脚本没有将自定义 glibc 加入 `LD_LIBRARY_PATH`
+  4. 验证 `.bashrc`：确保它在 `CURSOR_AGENT` 设置时清除 `LD_LIBRARY_PATH`
+  5. 检查 Agent 日志，查看 bash 命令是否正在执行
 
 ---
 

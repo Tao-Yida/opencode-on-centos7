@@ -451,7 +451,10 @@ The template at [`scripts/template_with_custom_glibc.sh`](scripts/template_with_
 
 ### Mouse Event Encoding
 
-All terminals that have run OpenCode may generate mouse behavior encodings (`[[<35;23;26M`) after running. Close the terminal tab to resolve. Running `reset` may help.
+- **Problem Description**: All terminals that have run the opencode command may continuously generate mouse behavior encodings (such as `[[<35;23;26M`, etc.) after running, as opencode enables terminal mouse event tracking functionality.
+- **Solution**: There is no direct solution at present, but this issue can be resolved by closing the current terminal window or tab. This issue does not affect the normal use of opencode.
+- **Temporary Relief**: Executing the `reset` command in the terminal may help, but is not guaranteed to completely solve the issue.
+- **Preventive Measures**: If this issue affects your workflow, consider using a dedicated terminal window for opencode.
 
 ### `libgcc_s.so.1` Dependency
 
@@ -463,13 +466,26 @@ libgcc_s.so.1 must be installed for pthread_cancel to work
 Aborted (core dumped)
 ```
 
+**Verification:**
+```bash
+ls -la ~/opt/gcc-9.5.0/lib64/libgcc_s.so.1
+```
+
 ### Bash Subprocess Crash (RESOLVED)
 
-Previously, OpenCode's subprocesses (bash, ls, etc.) would segfault because `LD_LIBRARY_PATH` was set to include custom glibc 2.28, but system binaries are compiled against glibc 2.17.
-
-**Root cause**: `LD_LIBRARY_PATH` inherited by subprocesses forces them to use incompatible glibc.
-
-**Fix**: The scripts now **do not** set `LD_LIBRARY_PATH` to custom glibc. The custom linker is invoked directly or via `patchelf`. Only GCC's lib path is added to `LD_LIBRARY_PATH`.
+- **Problem Description**: Previously, there was a severe environment isolation issue when running OpenCode with custom glibc 2.28. OpenCode could write files but could not read files or execute commands. Basic commands such as `ls`, `pwd`, `whoami`, etc., returned empty results or no output, or caused segmentation faults.
+- **Root Cause**: The issue was caused by `LD_LIBRARY_PATH` being set to include custom glibc 2.28 libraries. This environment variable was inherited by opencode's subprocesses (e.g., bash). However, the system's bash is compiled with system glibc 2.17, and attempting to use custom glibc 2.28 libraries causes bash to crash with a segmentation fault.
+- **Solution**:
+  1. **In all startup scripts**: Do NOT set `LD_LIBRARY_PATH` to custom glibc. Since agents use a patchelf-modified interpreter or `ld-linux --library-path`, they will automatically find the correct libraries without needing `LD_LIBRARY_PATH`.
+  2. **In `~/.bashrc`**: Add a check for `CURSOR_AGENT` environment variable and clear `LD_LIBRARY_PATH` when it's set. This ensures bash subprocesses use the system default glibc.
+  3. **Terminal Type**: Use `TERM=xterm-256color` instead of `TERM=dumb` to ensure proper command output.
+- **Status**: **RESOLVED** - The issue has been fixed. All agents can now read files and execute commands normally.
+- **Debugging Method**: If you encounter similar issues (commands returning no output or segmentation faults):
+  1. Check if `LD_LIBRARY_PATH` contains custom glibc paths: `echo $LD_LIBRARY_PATH`
+  2. Test bash with custom glibc: `LD_LIBRARY_PATH="/path/to/custom/glibc/lib:$LD_LIBRARY_PATH" bash -c 'echo test'` — this should crash
+  3. Verify the fix: Ensure startup scripts do NOT set `LD_LIBRARY_PATH` to custom glibc
+  4. Verify `.bashrc`: Ensure it clears `LD_LIBRARY_PATH` when `CURSOR_AGENT` is set
+  5. Check agent logs for bash command execution
 
 ---
 
