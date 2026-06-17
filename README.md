@@ -4,7 +4,7 @@
 
 # Running AI Coding Agents on CentOS 7 with Custom glibc 2.28
 
-**Supported Agents:** [OpenCode](https://opencode.ai) · [Cursor CLI](https://www.cursor.com) · [Kimi Code](https://kimi.moonshot.cn) · **[Add yours →](CONTRIBUTING.md)**
+**Supported Agents:** [OpenCode](https://opencode.ai) · [Cursor CLI](https://www.cursor.com) · [Kimi Code](https://kimi.moonshot.cn) · [ZCode](https://zcode.net) (Remote SSH) · **[Add yours →](CONTRIBUTING.md)**
 
 ---
 
@@ -26,6 +26,7 @@
 - [Agent: OpenCode](#agent-opencode)
 - [Agent: Cursor CLI](#agent-cursor-cli)
 - [Agent: Kimi Code](#agent-kimi-code)
+- [Agent: ZCode (Remote SSH)](#agent-zcode-remote-ssh)
 - [How to Add a New Agent](#how-to-add-a-new-agent)
 - [Security Enhancement & Defensive Programming](#security-enhancement--defensive-programming)
 - [Known Issues](#known-issues)
@@ -42,6 +43,7 @@
 | [OpenCode](https://opencode.ai) | `patchelf` interpreter modification | [`scripts/opencode_with_custom_glibc.sh`](scripts/opencode_with_custom_glibc.sh) | ✅ Active |
 | [Cursor CLI](https://www.cursor.com) | `ld-linux` direct invocation | [`scripts/cursor_cli_with_custom_glibc.sh`](scripts/cursor_cli_with_custom_glibc.sh) | ✅ Active |
 | [Kimi Code](https://kimi.moonshot.cn) | `ld-linux` direct invocation | [`scripts/kimi_with_custom_glibc.sh`](scripts/kimi_with_custom_glibc.sh) | ✅ Active |
+| [ZCode](https://zcode.z.ai) (Remote SSH) | `ld-linux` binary replacement | [`scripts/node`](scripts/node) | ✅ Active |
 | **Your Agent?** | Your method | `scripts/{agent}_with_custom_glibc.sh` | 🔜 [PRs Welcome](CONTRIBUTING.md) |
 
 ---
@@ -397,6 +399,77 @@ kimi() {
 ### Script: `scripts/kimi_with_custom_glibc.sh`
 
 Same approach as the Cursor CLI script — launches the kimi binary directly with the custom glibc dynamic linker.
+
+---
+
+## Agent: ZCode (Remote SSH)
+
+### Overview
+
+[ZCode](https://zcode.z.ai) is a Codex-like Agentic Development Environment (ADE) that enables AI agents to complete longer, multi-step development tasks end-to-end. Its remote SSH feature deploys a Node.js runtime (`~/.zcode/server/node`) on the remote Linux server and executes it directly via SSH — not through a shell alias or `.bashrc`.
+
+**Method**: Binary replacement — replaces `~/.zcode/server/node` with a wrapper script that proxies to the original binary (renamed to `node.real`) via the custom glibc dynamic linker.
+
+### Why This Is Different
+
+Unlike OpenCode (local binary, `patchelf` approach) or Cursor CLI / Kimi Code (local CLI, bash alias approach), ZCode's remote server is triggered by the Windows client via SSH:
+
+```
+Windows ZCode client
+  → SSH ~/.zcode/server/node        ← direct SSH execution
+  → This script intercepts via ld-linux-x86-64.so.2
+  → Launches original node.real with custom glibc 2.28
+```
+
+Since the SSH command executes the file directly, it **does not** go through aliases or `.bashrc` functions. The node binary itself must be replaced.
+
+### Installation
+
+On your remote CentOS 7 server, after completing the [Common Prerequisites](#common-prerequisites-build-gcc--make--glibc):
+
+```bash
+# 1. Navigate to ZCode's server directory
+cd ~/.zcode/server
+
+# 2. Back up the original node binary
+cp node node.real
+
+# 3. Deploy the wrapper script (from this repo)
+cp /path/to/centos7-coding-agents/scripts/node ~/.zcode/server/node
+
+# 4. Make it executable
+chmod +x ~/.zcode/server/node
+```
+
+That's it. No `.bashrc` changes needed.
+
+### Verification
+
+```bash
+# Verify node version
+~/.zcode/server/node --version
+# Should output: v22.16.0 (or your installed version)
+
+# Verify ZCode server handshake
+~/.zcode/server/node ~/.zcode/server/zcode-server.cjs
+# Should output: {"type":"zcode-hello","version":"...","platform":"linux","arch":"x64",...}
+```
+
+Once verified, reconnect from your ZCode Windows client — the remote server should connect successfully.
+
+### Important Notes
+
+- **ZCode version upgrades**: If ZCode updates its Node.js runtime version, it may re-upload the `node` binary, overwriting the wrapper. You'll need to re-apply the steps above.
+- **Runtime version detection**: ZCode checks `~/.zcode/server/.asset-components/node-runtime.json` to decide whether to re-deploy Node. If the version matches, it won't re-upload, so the wrapper usually persists across minor updates.
+- **Agent integration**: `~/.zcode/server/agents/glm/zcode-agent` also calls `$runtime_root/node`, so the wrapper covers both the server and internal agents automatically — no additional configuration needed.
+
+### Script: `scripts/node`
+
+This script is a drop-in replacement for `~/.zcode/server/node`. It:
+1. Locates the original binary (`node.real`) next to itself
+2. Launches it via `ld-linux-x86-64.so.2 --library-path ...`
+3. Sets `LD_LIBRARY_PATH` for GCC libs only (not glibc)
+4. Restores all environment variables on exit
 
 ---
 

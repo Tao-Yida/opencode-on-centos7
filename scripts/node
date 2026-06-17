@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# ZCode Remote Server Node.js Wrapper for CentOS 7
+#
+# This script replaces ~/.zcode/server/node to make ZCode's remote server
+# use a custom glibc 2.28 without modifying any ZCode configuration.
+#
+# How it works:
+#   ZCode client (Windows) connects to a remote Linux server via SSH and
+#   executes ~/.zcode/server/node directly. Since this is a direct SSH call
+#   (not through ~/.bashrc aliases), we must replace the node binary itself.
+#
+#   - Original node binary is renamed to node.real
+#   - This wrapper uses ld-linux-x86-64.so.2 --library-path to launch node.real
+#     with custom glibc 2.28
+#   - ZCode client is completely unaware of the wrapper
+#
+# Prerequisites:
+#   - glibc 2.28 installed at $HOME/opt/glibc-2.28
+#   - GCC 9.5.0 installed at $HOME/opt/gcc-9.5.0
+#   - ZCode remote server installed (original node at ~/.zcode/server/node)
+#
+# Installation (on remote Linux server):
+#   cp ~/.zcode/server/node ~/.zcode/server/node.real
+#   cp scripts/node ~/.zcode/server/node
+#   chmod +x ~/.zcode/server/node
+#
+# Caution: ZCode may overwrite this file during upgrades. Re-apply if needed.
+#
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NODE_REAL="${SCRIPT_DIR}/node.real"
+
+if [ ! -x "${NODE_REAL}" ]; then
+    echo "[zcode] ERROR: Original node binary not found: ${NODE_REAL}" >&2
+    echo "[zcode] Rename the original to node.real first:" >&2
+    echo "[zcode]   cp ~/.zcode/server/node ~/.zcode/server/node.real" >&2
+    exit 1
+fi
+
+# ─── Locate custom glibc ─────────────────────────────────────────────────────
+GLIBC_LINKER="${HOME}/opt/glibc-2.28/lib/ld-linux-x86-64.so.2"
+GLIBC_LIB_PATH="${HOME}/opt/glibc-2.28/lib:${HOME}/opt/gcc-9.5.0/lib64:/lib64:/usr/lib64"
+
+if [ ! -x "${GLIBC_LINKER}" ]; then
+    echo "[zcode] ERROR: Custom glibc linker not found at: ${GLIBC_LINKER}" >&2
+    exit 1
+fi
+
+# ─── Save original environment ───────────────────────────────────────────────
+ORIGINAL_LD_LIBRARY_PATH="${LD_LIBRARY_PATH-}"
+ORIGINAL_LD_PRELOAD="${LD_PRELOAD-}"
+ORIGINAL_LANG="${LANG-}"
+ORIGINAL_LC_ALL="${LC_ALL-}"
+ORIGINAL_LOCPATH="${LOCPATH-}"
+
+# ─── Set safe runtime environment ────────────────────────────────────────────
+export LANG="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+
+if [ -d "${HOME}/opt/glibc-2.28/lib/locale" ]; then
+    export LOCPATH="${HOME}/opt/glibc-2.28/lib/locale"
+fi
+
+# Only GCC lib path, NOT glibc path, to avoid subprocess crashes
+export LD_LIBRARY_PATH="${HOME}/opt/gcc-9.5.0/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# ─── Launch original node with custom glibc ──────────────────────────────────
+"${GLIBC_LINKER}" \
+    --library-path "${GLIBC_LIB_PATH}" \
+    "${NODE_REAL}" "$@"
+
+RETURN_CODE=$?
+
+# ─── Restore original environment ────────────────────────────────────────────
+export LD_LIBRARY_PATH="${ORIGINAL_LD_LIBRARY_PATH}"
+[ -n "${ORIGINAL_LD_PRELOAD-}" ] && export LD_PRELOAD="${ORIGINAL_LD_PRELOAD}" || unset LD_PRELOAD || true
+[ -n "${ORIGINAL_LANG}" ] && export LANG="${ORIGINAL_LANG}"
+if [ -n "${ORIGINAL_LC_ALL}" ]; then
+    export LC_ALL="${ORIGINAL_LC_ALL}"
+else
+    unset LC_ALL || true
+fi
+if [ -n "${ORIGINAL_LOCPATH}" ]; then
+    export LOCPATH="${ORIGINAL_LOCPATH}"
+else
+    unset LOCPATH || true
+fi
+
+exit ${RETURN_CODE}

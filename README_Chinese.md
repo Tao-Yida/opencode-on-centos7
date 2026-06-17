@@ -4,7 +4,7 @@
 
 # 在 CentOS 7 上使用自定义 glibc 2.28 运行 AI 编程 Agent
 
-**支持的 Agent：** [OpenCode](https://opencode.ai) · [Cursor CLI](https://www.cursor.com) · [Kimi Code](https://kimi.moonshot.cn) · **[添加你的 →](CONTRIBUTING.md)**
+**支持的 Agent：** [OpenCode](https://opencode.ai) · [Cursor CLI](https://www.cursor.com) · [Kimi Code](https://kimi.moonshot.cn) · [ZCode](https://zcode.z.ai)（远程 SSH）· **[添加你的 →](CONTRIBUTING.md)**
 
 ---
 
@@ -26,6 +26,7 @@
 - [Agent：OpenCode](#agentopencode)
 - [Agent：Cursor CLI](#agentcursor-cli)
 - [Agent：Kimi Code](#agentkimi-code)
+- [Agent：ZCode（远程 SSH）](#agentzcode远程-ssh)
 - [如何添加新的 Agent](#如何添加新的-agent)
 - [安全增强与防御性编程](#安全增强与防御性编程)
 - [已知问题](#已知问题)
@@ -42,6 +43,7 @@
 | [OpenCode](https://opencode.ai) | `patchelf` 解释器修改 | [`scripts/opencode_with_custom_glibc.sh`](scripts/opencode_with_custom_glibc.sh) | ✅ 维护中 |
 | [Cursor CLI](https://www.cursor.com) | `ld-linux` 直接调用 | [`scripts/cursor_cli_with_custom_glibc.sh`](scripts/cursor_cli_with_custom_glibc.sh) | ✅ 维护中 |
 | [Kimi Code](https://kimi.moonshot.cn) | `ld-linux` 直接调用 | [`scripts/kimi_with_custom_glibc.sh`](scripts/kimi_with_custom_glibc.sh) | ✅ 维护中 |
+| [ZCode](https://zcode.z.ai)（远程 SSH） | `ld-linux` 二进制替换 | [`scripts/node`](scripts/node) | ✅ 维护中 |
 | **你的 Agent？** | 你的方法 | `scripts/{agent}_with_custom_glibc.sh` | 🔜 [欢迎 PR](CONTRIBUTING.md) |
 
 ---
@@ -397,6 +399,77 @@ kimi() {
 ### 脚本：`scripts/kimi_with_custom_glibc.sh`
 
 与 Cursor CLI 脚本相同的方法——直接用自定义 glibc 动态链接器启动 kimi 二进制文件。
+
+---
+
+## Agent：ZCode（远程 SSH）
+
+### 概述
+
+[ZCode](https://zcode.z.ai) 是一个类似 Codex 的全功能 Agentic Development Environment (ADE)，用于让 AI Agent 端到端、稳定可控地完成跨度更长、步骤更多的开发任务。其远程 SSH 功能会在远程 Linux 服务器上部署 Node.js 运行时（`~/.zcode/server/node`），并通过 SSH 直接执行——不经过 shell 别名或 `.bashrc`。
+
+**方法**：二进制替换——将 `~/.zcode/server/node` 替换为一个包装脚本，该脚本通过自定义 glibc 动态链接器代理到原始二进制文件（重命名为 `node.real`）。
+
+### 与其他方案的区别
+
+OpenCode（本地二进制，`patchelf` 方案）和 Cursor CLI / Kimi Code（本地命令行，bash 别名方案）都是在本地 shell 中调用的。而 ZCode 的远程服务器是由 Windows 客户端通过 SSH 直接触发的：
+
+```
+Windows ZCode 客户端
+  → SSH ~/.zcode/server/node        ← 直接 SSH 执行
+  → 本脚本通过 ld-linux-x86-64.so.2 拦截
+  → 用自定义 glibc 2.28 启动原始 node.real
+```
+
+由于 SSH 命令直接执行文件，**不经过**别名或 `.bashrc` 函数，必须直接替换 node 二进制文件本身。
+
+### 安装方法
+
+在远程 CentOS 7 服务器上，完成[公共前置条件](#公共前置条件编译-gcc--make--glibc)后：
+
+```bash
+# 1. 进入 ZCode 服务器目录
+cd ~/.zcode/server
+
+# 2. 备份原始 node 二进制
+cp node node.real
+
+# 3. 部署包装脚本（来自本仓库）
+cp /path/to/centos7-coding-agents/scripts/node ~/.zcode/server/node
+
+# 4. 赋予执行权限
+chmod +x ~/.zcode/server/node
+```
+
+完成。**无需修改 `.bashrc`。**
+
+### 验证
+
+```bash
+# 验证 node 版本
+~/.zcode/server/node --version
+# 应输出：v22.16.0（或你安装的版本）
+
+# 验证 ZCode 服务端握手
+~/.zcode/server/node ~/.zcode/server/zcode-server.cjs
+# 应输出：{"type":"zcode-hello","version":"...","platform":"linux","arch":"x64",...}
+```
+
+验证通过后，从 Windows ZCode 客户端重新连接——远程服务器应能正常握手。
+
+### 重要注意事项
+
+- **ZCode 版本升级**：如果 ZCode 更新了 Node.js 运行时版本，可能会重新上传 `node` 文件覆盖包装脚本，需要重新执行上述步骤。
+- **运行时版本检测**：ZCode 通过 `~/.zcode/server/.asset-components/node-runtime.json` 判断是否需要重新部署 Node。如果版本匹配则不会重新上传，因此包装脚本通常能在小版本升级后保留。
+- **Agent 自动覆盖**：`~/.zcode/server/agents/glm/zcode-agent` 内部也会调用 `$runtime_root/node`，因此包装脚本同时覆盖了服务端和内部 Agent，无需额外配置。
+
+### 脚本：`scripts/node`
+
+该脚本是 `~/.zcode/server/node` 的即插即用替代品。它：
+1. 在同目录下查找原始二进制文件（`node.real`）
+2. 通过 `ld-linux-x86-64.so.2 --library-path ...` 启动它
+3. 设置 `LD_LIBRARY_PATH` 仅包含 GCC 库路径（不包含 glibc）
+4. 退出时恢复所有环境变量
 
 ---
 
